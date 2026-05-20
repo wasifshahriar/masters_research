@@ -1,5 +1,17 @@
+# Ignore everything
+*
+
+# Allow Python and Jupyter files
+!*.py
+!*.ipynb
+!*.sh
+
+# Always ignore these even if matched above
 .venv/
 .venv_test/
 __pycache__/
 .ipynb_checkpoints/
 *.pyc
+
+# Keep .gitignore itself
+!.gitignore
