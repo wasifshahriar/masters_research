@@ -582,6 +582,9 @@ print(f"  Processed: {processed_count}, Failed: {failed_count}, "
 # the satellite only covered part of the region that week — the saw-tooth you
 # had to explain away as an artifact. We now report flooded / OBSERVED area (a
 # fraction), which holds steady through coverage gaps and reflects real flooding.
+# GUARD ADDED: some 6-day windows catch NO Sentinel-1 pass at all. A bandless
+# composite makes Image.multiply throw (the 18-Jun error). We now skip those
+# windows cleanly instead of crashing the row.
 print("\n=== Section G: Total area time series (coverage-corrected) ===")
 
 total_area_ts = []
@@ -590,6 +593,14 @@ for i, date_str in enumerate(composite_dates):
         end_str = (datetime.strptime(date_str, "%Y-%m-%d") +
                    timedelta(days=COMPOSITE_WINDOW_DAYS)).strftime("%Y-%m-%d")
         window = flood_masks.filterDate(date_str, end_str)
+
+        # GUARD: no S1 pass in this window -> nothing to measure, skip cleanly.
+        if window.size().getInfo() == 0:
+            total_area_ts.append({"date": date_str, "flood_km2": -1,
+                                  "observed_km2": -1, "flooded_fraction": -1})
+            print(f"  {date_str}: no S1 pass in window — skipped")
+            continue
+
         flood_c    = window.select("flood_clean").max()           # 1=wet, 0=dry, masked=unobserved
         observed_c = window.select("flood_clean").count().gt(0)   # 1 where observed at all
         px = ee.Image.pixelArea()
@@ -597,7 +608,15 @@ for i, date_str in enumerate(composite_dates):
                 ee.Reducer.sum(), roi, 200, maxPixels=1e12).get("flood_clean")).divide(1e6).getInfo()
         oa = ee.Number(observed_c.multiply(px).reduceRegion(
                 ee.Reducer.sum(), roi, 200, maxPixels=1e12).get("flood_clean")).divide(1e6).getInfo()
-        frac = round(fa / oa, 3) if oa else -1
+
+        # GUARD: tiny observed area (a near-empty window) is unreliable — flag it.
+        if not oa or oa < 1.0:
+            total_area_ts.append({"date": date_str, "flood_km2": -1,
+                                  "observed_km2": round(oa, 1) if oa else 0, "flooded_fraction": -1})
+            print(f"  {date_str}: only {oa:.1f} km² observed — too little, skipped")
+            continue
+
+        frac = round(fa / oa, 3)
         total_area_ts.append({"date": date_str, "flood_km2": round(fa, 1),
                               "observed_km2": round(oa, 1), "flooded_fraction": frac})
         print(f"  {date_str}: {fa:.0f}/{oa:.0f} km² (frac {frac})")
