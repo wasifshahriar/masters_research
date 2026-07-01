@@ -73,7 +73,7 @@ CLUSTER_BBOX = [90.85, 24.85, 91.50, 25.25]      # [NEW] the 5-haor Tanguar clus
 BASELINE_START = "2025-01-01"
 BASELINE_END   = "2025-03-31"
 MONITOR_START  = "2025-04-01"
-MONITOR_END    = "2025-09-30"
+MONITOR_END    = "2025-12-31"   # [UPDATED] was 2025-09-30 — extended to capture the recession (dry-down)
 Z_THRESHOLD    = -2.5
 SLOPE_MAX      = 5
 
@@ -165,29 +165,45 @@ print("✓ Flood layers computed (onset + offset)")
 
 
 # ===========================================================================
-# SECTION A2: PER-DATE FLOOD STACK FOR THE CLUSTER  [NEW]
+# SECTION A2: PER-DATE FLOOD STACK FOR THE CLUSTER  [UPDATED v3]
 # ===========================================================================
-# WHY: the notebooks need EVERY date kept, not a reduced onset raster, to build
-# per-haor flooded-fraction curves (the hydrographs) and to track how flooded
-# areas merge and fragment over the season (dynamic connectivity). We export one
-# multiband GeoTIFF for the small cluster: each band is one S1 pass, valued
-# 1=flood, 0=dry, nodata=unobserved. Small AOI keeps the file size sane.
-print("\n=== Section A2: per-date flood stack (cluster) ===")
+# WHY THE CHANGE: the previous stack kept every Sentinel-1 SUB-SCENE as its own
+# band (~175 bands), so each acquisition date appeared 2-3 times with different
+# partial coverage. That made the hydrographs scatter vertically and the
+# connectivity swing 5<->1 for coverage reasons, not real fragmentation. We now
+# COMPOSITE all sub-scenes of the SAME date into ONE band: union of observed
+# pixels, OR of flooded pixels. Result: ~one band per real acquisition date,
+# each with full cluster coverage.
+#   value per pixel/date: 1 = flooded (any sub-scene), 0 = observed-dry,
+#                         nodata(nan) = not observed that date.
+print("\n=== Section A2: per-date flood stack (cluster, date-composited) ===")
 cluster = ee.Geometry.Rectangle(CLUSTER_BBOX)
 
-def name_by_date(img):
-    d = ee.Date(img.get("system:time_start")).format("YYYYMMdd")
-    return img.select("flood_clean").rename(ee.String("f").cat(d)).toFloat()
+# tag every flood mask with its acquisition date string
+flood_masks_dated = flood_masks.map(lambda img: img.set(
+    "date_str", ee.Date(img.get("system:time_start")).format("YYYYMMdd")))
 
-flood_stack = flood_masks.map(name_by_date).toBands()
+# distinct acquisition dates, sorted
+cluster_dates = flood_masks_dated.aggregate_array("date_str").distinct().sort()
+
+def composite_one_date(d):
+    d = ee.String(d)
+    day = flood_masks_dated.filter(ee.Filter.eq("date_str", d))
+    # max() over the day: 1 if any sub-scene flooded, 0 if observed-dry,
+    # masked where no sub-scene observed -> exported as nodata.
+    comp = day.select("flood_clean").max()
+    return comp.rename(ee.String("f").cat(d)).toFloat()
+
+date_composites = ee.ImageCollection(cluster_dates.map(composite_one_date))
+flood_stack = date_composites.toBands()
+
 ee.batch.Export.image.toDrive(
     image=flood_stack, description="flood_stack_cluster_2025",
     folder=MASKS_GDRIVE_FOLDER, fileNamePrefix="flood_stack_cluster_2025",
     region=cluster, scale=EXPORT_SCALE_COARSE, crs="EPSG:4326", maxPixels=1e10
 ).start()
 print(f"  Started export: flood_stack_cluster_2025 → Drive/{MASKS_GDRIVE_FOLDER}")
-print("  (one band per date; check band names once with rasterio .descriptions)")
-
+print("  (now ONE band per acquisition date; ~30 bands instead of 175)")
 
 # ===========================================================================
 # SECTION B: IMPROVED CoCoAH HAOR BOUNDARIES (with occurrence screening)
