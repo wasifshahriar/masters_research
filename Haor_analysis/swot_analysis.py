@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import os
 import glob
@@ -27,10 +27,10 @@ from cartopy.mpl.gridliner import (
 # ---------------------------
 
 # Directory with all downloaded SWOT Raster granules
-DATA_DIR = "/work/a06/wasif/swot_raster_data"
+DATA_DIR = "/Users/wasifshahriar/Documents/Masters research/Coding/swot_data"
 
 # Where to save output figures (one PNG per (cycle, path))
-RESULTS_DIR = "/work/a06/wasif/swot_results_wse/per_cycle_test11"
+RESULTS_DIR = "/Users/wasifshahriar/Documents/Masters research/Coding/swot_results/3"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Big AOI that covers west-side river + Haor  (west, south, east, north)
@@ -41,11 +41,11 @@ RES = "100"
 
 # Time window for granules you want to look at
 START_DATE = "2022-07-20"
-END_DATE   = "2026-01-31"
+END_DATE   = "2025-10-31"
 
 # WSE colour scale (fixed for all plots so maps are comparable)
 WSE_VMIN = 2.0
-WSE_VMAX = 5.0
+WSE_VMAX = 8.0
 
 
 # ---------------------------
@@ -303,7 +303,7 @@ def extract_qc_wse(ds):
         data = data.filled(np.nan)
 
     # Physical range
-    data = np.where((data > -999999) & (data < 10000000), data, np.nan)
+    data = np.where((data > -50.0) & (data < 200.0), data, np.nan)
 
     return data
 

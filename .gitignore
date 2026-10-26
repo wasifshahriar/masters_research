@@ -1,7 +1,8 @@
 # Ignore everything
 *
 
-# Allow Python and Jupyter files
+# Allow Python and Jupyter files (including inside subfolders)
+!*/
 !*.py
 !*.ipynb
 !*.sh
